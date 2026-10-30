@@ -1,0 +1,9 @@
+# secrets and personal data: never commit
+.env
+divar_session.json
+divar_session.secret.txt
+session_key.txt
+*.enc
+data/
+__pycache__/
+*.png

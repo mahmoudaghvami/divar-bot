@@ -1,0 +1,6 @@
+openai>=3.41
+pydantic>=2
+requests
+python-dotenv
+playwright>=1.50
+cryptography

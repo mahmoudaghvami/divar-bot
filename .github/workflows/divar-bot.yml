@@ -1,0 +1,67 @@
+# Keeps worker.py running on GitHub's servers: each run lasts ~5h45m, and the half-hourly
+# schedule queues the next run so it starts as soon as the current one ends.
+name: divar-bot
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: divar-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+      AI_MODEL: ${{ secrets.AI_MODEL }}
+      BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
+      BALE_CHAT_ID: ${{ secrets.BALE_CHAT_ID }}
+      LIST_PRICE: ${{ secrets.LIST_PRICE }}
+      FLOOR_PRICE: ${{ secrets.FLOOR_PRICE }}
+      SESSION_KEY: ${{ secrets.SESSION_KEY }}
+      BROWSER_CHANNEL: chrome
+      RUN_MINUTES: "345"
+      POLL_SECONDS: "60"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      # the Divar login refreshes itself while running; each run saves the newest one (encrypted)
+      - name: Restore Divar login
+        uses: actions/cache/restore@v4
+        with:
+          path: session.enc
+          key: divar-session-${{ github.run_id }}
+          restore-keys: divar-session-
+
+      - name: Decrypt Divar login
+        env:
+          DIVAR_SESSION_ENC: ${{ secrets.DIVAR_SESSION_ENC }}
+        run: |
+          if [ ! -f session.enc ]; then printf '%s' "$DIVAR_SESSION_ENC" > session.enc; fi
+          python session_vault.py decrypt session.enc divar_session.json
+
+      - name: Run the sales assistant
+        run: python -u worker.py
+
+      - name: Encrypt Divar login
+        if: always()
+        run: |
+          if [ -f divar_session.json ]; then python session_vault.py encrypt divar_session.json session.enc; fi
+
+      - name: Save Divar login
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: session.enc
+          key: divar-session-${{ github.run_id }}
