@@ -27,6 +27,7 @@ jobs:
       BROWSER_CHANNEL: chrome
       RUN_MINUTES: "345"
       POLL_SECONDS: "60"
+      AUTO_SEND_SECONDS: "5"  # send a draft by itself if not answered in Bale within 5 s; "0" = always wait
     steps:
       - uses: actions/checkout@v4
 

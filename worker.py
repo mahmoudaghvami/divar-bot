@@ -6,6 +6,7 @@ Loop: every POLL_SECONDS read the chats on the ad in Divar; for every chat whose
 message is from the buyer, draft a reply and post it to Bale with approve/skip buttons.
 In between, listen to Bale: an approved draft is typed into Divar and sent.
 Replying to a draft in Bale with your own text sends your text instead.
+With AUTO_SEND_SECONDS set, a draft nobody acted on is sent by itself after that delay.
 Logs carry counts and ids only, never message text (GitHub Actions logs can be public).
 """
 import hashlib
@@ -34,6 +35,7 @@ class Draft:
     sig: str
     decision: Decision
     bale_message_id: int | None = None
+    created: float = 0.0
 
 
 pending: dict[str, Draft] = {}
@@ -92,11 +94,14 @@ def check_divar(dc: DivarChat):
         d = decide(conv)
         draft = Draft(uuid.uuid4().hex[:8], chat.id, name, sig, d)
         buyer_lines = "\n".join(f"«{m['text']}»" for m in msgs[-3:] if m["peer"])
+        auto = (f"⏱ اگر تا {config.AUTO_SEND_SECONDS} ثانیه کاری نکنید، خودش فرستاده می‌شود.\n"
+                if config.AUTO_SEND_SECONDS else "")
         text = (f"🛒 {name}:\n{buyer_lines}\n\n✍️ جواب پیشنهادی:\n{d.reply}\n\n"
-                f"وضعیت: {d.status} | قیمت ما: {notify.fmt(d.our_offer)}\n"
+                f"وضعیت: {d.status} | قیمت ما: {notify.fmt(d.our_offer)}\n{auto}"
                 "(برای متن دیگر، روی همین پیام Reply کنید و متن خودتان را بنویسید)")
         msg = notify.bale("sendMessage", chat_id=config.BALE_CHAT_ID, text=text, reply_markup=_buttons(draft.id))
         draft.bale_message_id = (msg or {}).get("message_id")
+        draft.created = time.time()  # the owner's window starts once the draft is in Bale
         pending[draft.id] = draft
         new += 1
 
@@ -185,6 +190,21 @@ def handle_bale(dc: DivarChat, timeout: int):
                                   f"کف قیمت: {notify.fmt(config.FLOOR_PRICE)}")
 
 
+def auto_send(dc: DivarChat):
+    """Send drafts the owner left alone for AUTO_SEND_SECONDS."""
+    if not config.AUTO_SEND_SECONDS:
+        return
+    due = [d for d in pending.values() if time.time() - d.created >= config.AUTO_SEND_SECONDS]
+    for draft in due:
+        try:
+            status = send_draft(dc, draft)
+        except Exception as e:  # leave it pending; the owner can still tap «بفرست»
+            log.warning("auto-send failed: %s", type(e).__name__)
+            draft.created = time.time()
+            continue
+        _mark(draft, "⏱ " + status + " (خودکار)")
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not config.DIVAR_SESSION.exists():
@@ -206,7 +226,11 @@ def main():
                         notify.send_owner("⚠️ ورود به دیوار منقضی شده؛ divar_login.py را دوباره اجرا کنید.")
                         raise
                 next_check = time.time() + config.POLL_SECONDS
-            handle_bale(dc, timeout=max(1, min(20, int(next_check - time.time()))))
+            wake = next_check
+            if config.AUTO_SEND_SECONDS and pending:
+                wake = min(wake, min(d.created for d in pending.values()) + config.AUTO_SEND_SECONDS)
+            handle_bale(dc, timeout=max(1, min(20, int(wake - time.time()))))
+            auto_send(dc)
     finally:
         dc.close()
 

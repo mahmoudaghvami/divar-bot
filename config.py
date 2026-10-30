@@ -48,3 +48,4 @@ AD_TITLE_MATCH = os.getenv("AD_TITLE_MATCH", "موزر")  # only chats on ads wh
 BROWSER_CHANNEL = os.getenv("BROWSER_CHANNEL", "msedge" if os.name == "nt" else "chrome")
 POLL_SECONDS = _int("POLL_SECONDS", 60)
 RUN_MINUTES = _int("RUN_MINUTES", 0)  # 0 = forever; GitHub Actions sets a limit per job
+AUTO_SEND_SECONDS = _int("AUTO_SEND_SECONDS", 0)  # send a draft by itself after this long; 0 = always wait
