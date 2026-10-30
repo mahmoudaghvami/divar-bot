@@ -198,6 +198,8 @@ def main():
             if time.time() >= next_check:
                 try:
                     check_divar(dc)
+                    # Divar rotates its login tokens; save the newest so a crash never leaves a stale one
+                    dc.context.storage_state(path=str(config.DIVAR_SESSION))
                 except Exception as e:  # keep running through page hiccups
                     log.warning("divar check failed: %s", type(e).__name__)
                     if "login expired" in str(e):
